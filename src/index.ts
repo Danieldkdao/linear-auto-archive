@@ -62,7 +62,7 @@ app.post(
         }
       }, "Failed to send success message");
 
-      res.status(201).send("Issue archived successfully!");
+      res.status(201).send("Received");
     } catch (error) {
       console.error("Unknown workflow error:", error);
       const statusCode = error instanceof ApiError ? error.statusCode : 500;
