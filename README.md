@@ -155,7 +155,7 @@ cd linear-auto-archive
 pnpm install && pnpm build
 ```
 
-Keep it out of `~/Desktop` and `~/Documents` if iCloud Drive syncs those folders — synced files can be evicted from local disk.
+Do **not** clone into `~/Desktop`, `~/Documents`, or `~/Downloads`. macOS TCC blocks background daemons from those folders even when running as root — the job fails with `Operation not permitted` and exit code 126. iCloud Drive sync can also evict those files from local disk. `~/services` is outside both.
 
 ### 4. Create a 1Password service account
 
