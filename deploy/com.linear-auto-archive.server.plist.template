@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.linear-auto-archive.server</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/sh</string>
+		<string>@REPO@/deploy/run.sh</string>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>@REPO@</string>
+	<key>UserName</key>
+	<string>@USER@</string>
+	<key>GroupName</key>
+	<string>staff</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>@PATH@</string>
+		<key>HOME</key>
+		<string>@HOME@</string>
+		<key>OP_ENVIRONMENT_ID</key>
+		<string>@ENV_ID@</string>
+		<key>OP_TOKEN_FILE</key>
+		<string>@TOKEN_FILE@</string>
+	</dict>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>ThrottleInterval</key>
+	<integer>10</integer>
+	<key>ProcessType</key>
+	<string>Background</string>
+	<key>StandardOutPath</key>
+	<string>@REPO@/logs/server.log</string>
+	<key>StandardErrorPath</key>
+	<string>@REPO@/logs/server.log</string>
+</dict>
+</plist>
