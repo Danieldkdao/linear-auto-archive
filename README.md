@@ -163,7 +163,7 @@ Requires a 1Password plan with Secrets Automation. In the 1Password web app: **D
 
 A vault-scoped account can also be created from the CLI by an admin/owner: `op service-account create linear-auto-archive --vault <Vault>:read_items`. Environment access is granted in the web app.
 
-You do not need to store the token yourself — `deploy/install.sh` prompts for it with hidden input and writes it straight to the System keychain, so it never enters shell history, a file, or a process argument list.
+You do not need to store the token yourself — `deploy/install.sh` asks for it with hidden input and writes it straight to the System keychain, so it never enters shell history or a file. One caveat: `security` refuses to prompt when a keychain is named, so the value is passed as an argument for that single call and is briefly visible in `ps`. At service startup the token travels only through the environment.
 
 ### 5. Get the Environment ID
 

@@ -33,12 +33,18 @@ if sudo security find-generic-password -s "$KC_SERVICE" -a "$KC_ACCOUNT" "$KEYCH
   info "Reusing existing System keychain item '$KC_SERVICE/$KC_ACCOUNT'"
 else
   info "Storing the service account token in the System keychain"
-  printf 'Paste the token at the prompt (input is hidden, not saved to history).\n'
-  # -w last means "prompt for it", so the token never lands in argv or history.
+  printf 'Paste the service account token (input hidden, not saved to history): '
+  read -rs TOKEN
+  printf '\n'
+  [ -n "$TOKEN" ] || die "empty token"
+  # `security` only prompts for a password when no keychain is named, so the
+  # value must be passed as an argument here. It is visible in `ps` for the
+  # duration of this one call.
   sudo security add-generic-password \
     -s "$KC_SERVICE" -a "$KC_ACCOUNT" \
     -T /usr/bin/security -U \
-    "$KEYCHAIN" -w || die "could not write the keychain item"
+    -w "$TOKEN" "$KEYCHAIN" || die "could not write the keychain item"
+  unset TOKEN
 fi
 
 info "Checking the token can read the Environment"
