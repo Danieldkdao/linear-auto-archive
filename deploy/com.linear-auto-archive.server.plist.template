@@ -12,19 +12,21 @@
 	<key>WorkingDirectory</key>
 	<string>@REPO@</string>
 	<key>UserName</key>
-	<string>@USER@</string>
+	<string>root</string>
 	<key>GroupName</key>
-	<string>staff</string>
+	<string>wheel</string>
 	<key>EnvironmentVariables</key>
 	<dict>
 		<key>PATH</key>
 		<string>@PATH@</string>
 		<key>HOME</key>
-		<string>@HOME@</string>
+		<string>/var/root</string>
 		<key>OP_ENVIRONMENT_ID</key>
 		<string>@ENV_ID@</string>
-		<key>OP_TOKEN_FILE</key>
-		<string>@TOKEN_FILE@</string>
+		<key>SERVICE_USER</key>
+		<string>@USER@</string>
+		<key>SERVICE_HOME</key>
+		<string>@HOME@</string>
 	</dict>
 	<key>RunAtLoad</key>
 	<true/>

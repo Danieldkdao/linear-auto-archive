@@ -128,7 +128,9 @@ src/
 
 For an always-on machine such as a Mac mini: starts at boot, needs no terminal and no login, restarts on crash and after a reboot.
 
-A **LaunchDaemon** runs `node dist/index.js` as your user (not root). Secrets are injected at start by `op run --environment` using a 1Password **service account**, so no secret is ever written to disk and the 1Password desktop app does not need to be running or unlocked.
+A **LaunchDaemon** starts as root, reads the service account token from the macOS **System keychain** — which is unlocked at boot, before any login — then drops to your user to run `node dist/index.js`. Secrets are injected by `op run --environment`, so the 1Password desktop app never needs to be running or unlocked, and no application secret is written to disk.
+
+The login keychain is deliberately not used: it stays locked until GUI login, which would defeat boot-time startup.
 
 Scaffolding lives in `deploy/`: `run.sh` (entry point), `com.linear-auto-archive.server.plist.template`, `install.sh`.
 
@@ -142,7 +144,7 @@ Scaffolding lives in `deploy/`: `run.sh` (entry point), `com.linear-auto-archive
 
 With FileVault on, macOS waits at the pre-boot unlock screen and **no launchd job runs until someone types a password** — unattended restart is impossible. System Settings → Privacy & Security → FileVault → Turn Off, then wait for decryption to finish.
 
-Tradeoff: the disk is unencrypted, so physical access to the mini exposes the token file. If that is unacceptable, keep FileVault on and accept one password entry after each cold boot; `sudo fdesetup authrestart` skips the prompt for planned reboots.
+Tradeoff: the disk is unencrypted, so physical access to the mini can still expose the token — the System keychain's own encryption key (`/var/db/SystemKey`) lives on that same disk. If that is unacceptable, keep FileVault on and accept one password entry after each cold boot; `sudo fdesetup authrestart` skips the prompt for planned reboots.
 
 ### 3. Clone and build
 
@@ -157,20 +159,11 @@ Keep it out of `~/Desktop` and `~/Documents` if iCloud Drive syncs those folders
 
 ### 4. Create a 1Password service account
 
-Requires a 1Password plan with Secrets Automation. In the 1Password web app: **Developer Tools → Service Accounts → create**, grant it read access to the Environment holding this app's variables, and copy the token (shown only once). Service accounts cannot access Personal or Private vaults.
+Requires a 1Password plan with Secrets Automation. In the 1Password web app: **Developer Tools → Service Accounts → create**, grant it read access to **only** the Environment holding this app's variables, and copy the token (shown only once). Service accounts cannot access Personal or Private vaults.
 
 A vault-scoped account can also be created from the CLI by an admin/owner: `op service-account create linear-auto-archive --vault <Vault>:read_items`. Environment access is granted in the web app.
 
-Store the token without leaving it in shell history:
-
-```bash
-mkdir -p "$HOME/Library/Application Support/linear-auto-archive"
-read -rs TOKEN            # paste the token, press Enter; input is not echoed
-umask 077
-printf '%s' "$TOKEN" > "$HOME/Library/Application Support/linear-auto-archive/op-token"
-chmod 600 "$HOME/Library/Application Support/linear-auto-archive/op-token"
-unset TOKEN
-```
+You do not need to store the token yourself — `deploy/install.sh` prompts for it with hidden input and writes it straight to the System keychain, so it never enters shell history, a file, or a process argument list.
 
 ### 5. Get the Environment ID
 
@@ -182,7 +175,7 @@ unset TOKEN
 deploy/install.sh <environment-id>
 ```
 
-The script preflights that the service account can actually read the Environment (so a wrong token or scope fails before anything is installed), renders the plist with this machine's paths, installs it as `root:wheel` `0644` into `/Library/LaunchDaemons`, loads it with `launchctl bootstrap`, and waits for `/health`. Re-running it is safe — it boots out the previous job first.
+On first run it prompts for the service account token and stores it in the System keychain as `linear-auto-archive/op-token`. It then preflights that the token can actually read the Environment (so a wrong token or scope fails before anything is installed), renders the plist with this machine's paths, installs it as `root:wheel` `0644` into `/Library/LaunchDaemons`, loads it with `launchctl bootstrap`, and waits for `/health`. Re-running it is safe — it reuses the existing keychain item and boots out the previous job first.
 
 ### 7. Expose it with Funnel
 
@@ -219,13 +212,22 @@ Stop and remove:
 ```bash
 sudo launchctl bootout system/com.linear-auto-archive.server
 sudo rm /Library/LaunchDaemons/com.linear-auto-archive.server.plist
+sudo security delete-generic-password -s linear-auto-archive -a op-token /Library/Keychains/System.keychain
+```
+
+Rotate the token (revoke the old service account in the 1Password web app first):
+
+```bash
+sudo security delete-generic-password -s linear-auto-archive -a op-token /Library/Keychains/System.keychain
+deploy/install.sh <environment-id>    # prompts for the new token, then reloads the job
 ```
 
 ### Service behaviour
 
 - `KeepAlive` with `ThrottleInterval 10`: restarts on any exit, at most once per 10s. Invalid env causes a crash loop — read `logs/server.log`.
 - Starts at boot before any login, so closing Terminal or logging out does not stop it.
-- `op run` forwards SIGTERM to node, so launchd stops the process tree cleanly with no orphans.
+- `op run` forwards SIGTERM to node and launchd signals the job's process group, so shutdown is clean with no orphans.
 - `logs/server.log` is gitignored and **not rotated**; it grows slowly (one line per archive plus errors).
-- The only on-disk secret is the `0600` token file. Application secrets exist solely in the process environment.
+- The token lives in the System keychain, readable only by root. Application secrets exist solely in the process environment — nothing secret is written to disk.
+- The job starts as root only to read the keychain; `sudo -u` drops to your user before node runs, so the publicly exposed server is unprivileged. The token is passed through the environment, never as a command-line argument, so it does not appear in `ps` output.
 

@@ -1,13 +1,18 @@
 #!/bin/bash
 # Installs the server as a boot-time LaunchDaemon on macOS.
-# Run as your normal user; sudo is used only to place and load the plist.
+# The daemon starts as root to read the System keychain, then drops to your
+# user to run node. Run this as your normal user; sudo is used for the
+# keychain item, the plist, and launchctl.
 set -euo pipefail
 
 LABEL="com.linear-auto-archive.server"
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 TEMPLATE="$REPO/deploy/$LABEL.plist.template"
 TARGET="/Library/LaunchDaemons/$LABEL.plist"
-TOKEN_FILE="${OP_TOKEN_FILE:-$HOME/Library/Application Support/linear-auto-archive/op-token}"
+KEYCHAIN="/Library/Keychains/System.keychain"
+KC_SERVICE="linear-auto-archive"
+KC_ACCOUNT="op-token"
+LEGACY_TOKEN_FILE="$HOME/Library/Application Support/linear-auto-archive/op-token"
 ENV_ID="${1:-}"
 PORT="${PORT:-12480}"
 
@@ -20,29 +25,33 @@ info() { printf '==> %s\n' "$*"; }
 [ -f "$REPO/dist/index.js" ] || die "dist/index.js not found - run: pnpm install && pnpm build"
 [ -f "$REPO/deploy/run.sh" ] || die "missing deploy/run.sh"
 
-for bin in node op curl plutil; do
+for bin in node op curl plutil security sudo; do
   command -v "$bin" >/dev/null 2>&1 || die "$bin not found on PATH"
 done
 
-if [ ! -f "$TOKEN_FILE" ]; then
-  die "service account token not found at: $TOKEN_FILE
-Create it without leaving the token in shell history:
-  mkdir -p \"$(dirname "$TOKEN_FILE")\"
-  read -rs TOKEN
-  umask 077 && printf '%s' \"\$TOKEN\" > \"$TOKEN_FILE\"
-  chmod 600 \"$TOKEN_FILE\" && unset TOKEN"
+if sudo security find-generic-password -s "$KC_SERVICE" -a "$KC_ACCOUNT" "$KEYCHAIN" >/dev/null 2>&1; then
+  info "Reusing existing System keychain item '$KC_SERVICE/$KC_ACCOUNT'"
+else
+  info "Storing the service account token in the System keychain"
+  printf 'Paste the token at the prompt (input is hidden, not saved to history).\n'
+  # -w last means "prompt for it", so the token never lands in argv or history.
+  sudo security add-generic-password \
+    -s "$KC_SERVICE" -a "$KC_ACCOUNT" \
+    -T /usr/bin/security -U \
+    "$KEYCHAIN" -w || die "could not write the keychain item"
 fi
 
-PERMS="$(stat -f '%Lp' "$TOKEN_FILE")"
-[ "$PERMS" = "600" ] || die "token file must be chmod 600 (currently $PERMS): $TOKEN_FILE"
-
-info "Checking the service account can read the Environment"
-OP_SERVICE_ACCOUNT_TOKEN="$(cat "$TOKEN_FILE")" \
+info "Checking the token can read the Environment"
+OP_SERVICE_ACCOUNT_TOKEN="$(sudo security find-generic-password -s "$KC_SERVICE" -a "$KC_ACCOUNT" -w "$KEYCHAIN")" \
   op run --environment "$ENV_ID" -- node -e '
     const required = ["NODE_ENV", "LINEAR_API_KEY", "LINEAR_WEBHOOK_SECRET", "DISCORD_WEBHOOK_URL"];
     const missing = required.filter((k) => !process.env[k]);
     if (missing.length) { console.error("Environment is missing: " + missing.join(", ")); process.exit(1); }
   ' || die "preflight failed - check the token, its Environment access, and the Environment ID"
+
+if [ -f "$LEGACY_TOKEN_FILE" ]; then
+  printf '\nwarning: the old plaintext token file still exists. Remove it once the service is healthy:\n  rm "%s"\n\n' "$LEGACY_TOKEN_FILE"
+fi
 
 NODE_BIN_DIR="$(dirname "$(command -v node)")"
 OP_BIN_DIR="$(dirname "$(command -v op)")"
@@ -55,12 +64,14 @@ PLIST="${PLIST//@USER@/$(id -un)}"
 PLIST="${PLIST//@HOME@/$HOME}"
 PLIST="${PLIST//@PATH@/$SERVICE_PATH}"
 PLIST="${PLIST//@ENV_ID@/$ENV_ID}"
-PLIST="${PLIST//@TOKEN_FILE@/$TOKEN_FILE}"
 
 TMP_PLIST="$(mktemp)"
 trap 'rm -f "$TMP_PLIST"' EXIT
 printf '%s\n' "$PLIST" > "$TMP_PLIST"
 plutil -lint "$TMP_PLIST" >/dev/null || die "rendered plist is not valid"
+if grep -q '@[A-Z_]*@' "$TMP_PLIST"; then
+  die "unsubstituted placeholder left in plist"
+fi
 
 mkdir -p "$REPO/logs"
 
