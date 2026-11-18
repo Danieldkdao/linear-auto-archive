@@ -78,7 +78,7 @@ const sendMessage = async (message: string) => {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      content: message,
+      content: `${message}\n`,
     }),
   });
 };
