@@ -90,7 +90,9 @@ pnpm dev     # in one terminal
 pnpm funnel  # in another
 ```
 
-Then point the Linear webhook at the funnel hostname that `tailscale funnel` prints. If you use the `--set-path=/linear-auto-archive` prefix from the `funnel` script, Linear may need to call `https://<host>/linear-auto-archive/webhooks/linear`; watch the server log for the incoming request path and adjust the webhook URL or the route in `src/index.ts` to match.
+Then point the Linear webhook at the funnel hostname that `tailscale funnel` prints. Tailscale **strips** the `--set-path` prefix before proxying, so the `funnel` script's `/linear-auto-archive` prefix still reaches the `/webhooks/linear` route; the public URL is `https://<host>/linear-auto-archive/webhooks/linear`.
+
+Check `tailscale funnel status` first if the machine serves anything else: Funnel is enabled per port, not per path, so it publishes every handler on that port.
 
 To stop the funnel: `tailscale funnel --stop`.
 
@@ -179,16 +181,28 @@ On first run it prompts for the service account token and stores it in the Syste
 
 ### 7. Expose it with Funnel
 
+**Check for existing handlers first:**
+
 ```bash
-sudo tailscale funnel --bg --https=443 12480
 tailscale funnel status
 ```
 
-Use the root path, not `pnpm funnel`: that script's `--set-path=/linear-auto-archive` prefix does not match the `/webhooks/linear` route. The webhook URL to enter in Linear is:
+Funnel is enabled **per HTTPS port, not per path**. Turning it on for port 443 publishes *every* handler on 443 to the internet, and a bare `tailscale funnel --bg 12480` also replaces the existing `/` handler. If anything else is already served on 443, give this app its own port:
+
+```bash
+sudo tailscale funnel --bg --https=8443 12480
+tailscale funnel status
+```
+
+8443 is allowed by the default tailnet Funnel policy (443, 8443, 10000). The 443 config is left untouched and stays tailnet-only. The webhook URL for Linear is then:
 
 ```
-https://<mini-hostname>.<tailnet>.ts.net/webhooks/linear
+https://<mini-hostname>.<tailnet>.ts.net:8443/webhooks/linear
 ```
+
+If 443 is free, `sudo tailscale funnel --bg --https=443 12480` gives the standard-port URL `https://<host>/webhooks/linear`.
+
+`--set-path` is safe to use — Tailscale strips the prefix before proxying, so `--set-path=/linear-auto-archive` still reaches `/webhooks/linear`. It does not narrow Funnel's scope; the whole port is published either way.
 
 Funnel config is stored by `tailscaled` and restored on boot.
 
