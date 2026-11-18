@@ -45,7 +45,9 @@ export const archiveIssue = async (issueId: string) => {
   if (!existingIssue || existingIssue.id !== issueId)
     throw new ApiError("Issue not found", 404);
 
-  if (!Boolean(existingIssue.completedAt)) {
+  // Archiving fires another Issue update webhook, and deleting an archived
+  // issue can too. Without this guard both re-run the archive and re-notify.
+  if (existingIssue.archivedAt || !existingIssue.completedAt) {
     return {
       actionPerformed: false,
       issue: existingIssue,

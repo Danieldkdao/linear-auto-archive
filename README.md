@@ -7,9 +7,10 @@ A small webhook service that archives Linear issues as soon as they are marked *
 1. Listens for Linear webhooks at `POST /webhooks/linear`.
 2. Verifies the request with Linear's signing secret (HMAC-SHA256 over the raw body, plus the `webhookTimestamp` freshness check — requests older than 60s are rejected). Invalid signatures return `401`.
 3. Keeps only `Issue` events with action `update`; everything else is ignored.
-4. Fetches the issue by id and checks `completedAt`:
-   - **set** → the issue is archived and Discord is notified.
-   - **not set** → nothing happens (e.g. a title or priority change on an open issue).
+4. Fetches the issue by id and acts only when it is completed **and not already archived**:
+   - `completedAt` set, `archivedAt` null → the issue is archived and Discord is notified.
+   - `completedAt` not set → nothing happens (e.g. a title or priority change on an open issue).
+   - `archivedAt` already set → nothing happens. Archiving itself emits another `Issue update` webhook, and deleting an archived issue can too; without this guard each of those would re-archive and send a duplicate notification.
 5. Sends a success message to Discord containing the issue identifier, title, and the Linear API rate-limit counters read from the GraphQL response headers (`X-Complexity`, `X-RateLimit-Complexity-Remaining`, `X-RateLimit-Requests-Remaining`).
 
 Any failure along the way (bad signature, issue not found, archive failed, Discord unreachable) is logged to stdout, pushed to Discord as an error message, and returned to Linear with an appropriate status code.
